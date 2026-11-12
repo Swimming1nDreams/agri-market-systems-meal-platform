@@ -9,7 +9,7 @@ from datetime import datetime
 
 PORT = 8080
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "foster_enterprise_warehouse.db")
+DB_PATH = os.path.join(BASE_DIR, "enterprise_meal_warehouse.db")
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 
 def get_db():
@@ -457,7 +457,7 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         self.send_json(forecast)
 
     def handle_audit_logs(self):
-        log_path = os.path.join(BASE_DIR, "FOSTER_II_Data_Quality_Audit_Log.csv")
+        log_path = os.path.join(BASE_DIR, "Data_Quality_Audit_Log.csv")
         items = []
         if os.path.exists(log_path):
             with open(log_path, "r", encoding="utf-8") as f:
