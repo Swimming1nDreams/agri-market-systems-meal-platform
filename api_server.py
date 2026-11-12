@@ -347,7 +347,7 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"==================================================")
-    print(f" FOSTER II ENTERPRISE MEAL & MIS PLATFORM SERVER")
+    print(f" ENTERPRISE AGRI-MEAL & MIS PLATFORM SERVER")
     print(f" Running on http://localhost:{PORT}")
     print(f" Serving Database: {DB_PATH}")
     print(f" Serving UI from: {PUBLIC_DIR}")
