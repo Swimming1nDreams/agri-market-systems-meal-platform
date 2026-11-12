@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FOSTER II Enterprise MEAL & MIS Cloud Platform</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet GIS Mapping -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0b1120; color: #f1f5f9; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glass-card-hover:hover { border-color: rgba(56, 189, 248, 0.4); transform: translateY(-2px); transition: all 0.2s ease; }
+        #gisMap { height: 420px; width: 100%; border-radius: 0.75rem; z-index: 10; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
+    </style>
+</head>
+<body class="min-h-screen custom-scrollbar pb-12">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-6 py-3.5">
+        <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3.5">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                    <i class="fa-solid fa-chart-network text-white text-lg"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-lg font-bold text-white tracking-tight">FOSTER II MEAL & MIS Enterprise Platform</h1>
+                        <span class="bg-blue-500/10 text-blue-400 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-blue-500/20">v2.4 Enterprise</span>
+                    </div>
+                    <p class="text-xs text-slate-400">HEKS/EPER Myanmar • Southern Shan State Agrifood & MSME Portfolio</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot"></span>
+                    <span class="text-xs text-slate-300 font-medium">SQLite Warehouse: <span class="text-emerald-400 font-semibold" id="headerCount">5,200</span></span>
+                </div>
+
+                <button onclick="simulateLiveKobo()" class="bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-lg shadow-emerald-600/20 flex items-center space-x-2 transition">
+                    <i class="fa-solid fa-cloud-arrow-down"></i>
+                    <span>Simulate Kobo Webhook</span>
+                </button>
+
+                <a href="/FOSTER_II_Enterprise_MEAL_Warehouse_5200Records.xlsx" download class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1.5 transition">
+                    <i class="fa-solid fa-file-excel text-emerald-400"></i>
+                    <span>Export Excel</span>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 mt-6 space-y-6">
+
+        <!-- 4 Core Metric KPI Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="glass-card glass-card-hover p-4 rounded-xl relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Total Participants</p>
+                        <h3 class="text-2xl font-extrabold text-white mt-1" id="kpiBeneficiaries">5,200</h3>
+                        <p class="text-xs text-emerald-400 mt-1 flex items-center space-x-1">
+                            <i class="fa-solid fa-check-double"></i>
+                            <span id="kpiVerified">100% Verified in Shan State</span>
+                        </p>
+                    </div>
+                    <div class="w-11 h-11 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-users-viewfinder"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card glass-card-hover p-4 rounded-xl relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Supported MSMEs</p>
+                        <h3 class="text-2xl font-extrabold text-cyan-400 mt-1" id="kpiMSMEs">1,040</h3>
+                        <p class="text-xs text-slate-400 mt-1">20% Catalytic Enterprise Share</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-building-wheat"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card glass-card-hover p-4 rounded-xl relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Female Inclusion Rate</p>
+                        <h3 class="text-2xl font-extrabold text-purple-400 mt-1" id="kpiFemale">48.2%</h3>
+                        <p class="text-xs text-emerald-400 mt-1 flex items-center space-x-1">
+                            <i class="fa-solid fa-arrow-trend-up"></i>
+                            <span>Exceeds Target (40%)</span>
+                        </p>
+                    </div>
+                    <div class="w-11 h-11 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-venus"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card glass-card-hover p-4 rounded-xl relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Financing Facilitated</p>
+                        <h3 class="text-2xl font-extrabold text-emerald-400 mt-1" id="kpiFinancing">15.8B MMK</h3>
+                        <p class="text-xs text-slate-400 mt-1">Catalytic Loans & Grants</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-sack-dollar"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Section: Leaflet GIS Map + Logframe ITT Table -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left: GIS Geospatial Map (7 Cols) -->
+            <div class="lg:col-span-7 glass-card rounded-xl p-4 flex flex-col">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-map-location-dot text-cyan-400"></i>
+                        <h2 class="text-sm font-bold text-white uppercase tracking-wider">Southern Shan Spatial Clusters (GIS)</h2>
+                    </div>
+                    <div class="flex items-center space-x-2 text-xs">
+                        <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500"></span><span class="text-slate-400">Coffee</span>
+                        <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span class="text-slate-400">Tea</span>
+                        <span class="inline-block w-2.5 h-2.5 rounded-full bg-lime-400"></span><span class="text-slate-400">Avocado</span>
+                        <span class="inline-block w-2.5 h-2.5 rounded-full bg-purple-400"></span><span class="text-slate-400">Veg</span>
+                    </div>
+                </div>
+                <div id="gisMap" class="shadow-inner border border-slate-700/50"></div>
+                <div class="mt-2.5 flex justify-between items-center text-xs text-slate-400">
+                    <span>Target Townships: Taunggyi, Kalaw, Hopong, Pindaya, Nyaungshwe, Ywangan</span>
+                    <span class="text-cyan-400"><i class="fa-solid fa-crosshairs mr-1"></i>Live Spatial Coordinates</span>
+                </div>
+            </div>
+
+            <!-- Right: Logframe Indicator Tracking Table (ITT) (5 Cols) -->
+            <div class="lg:col-span-5 glass-card rounded-xl p-4 flex flex-col">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-list-check text-indigo-400"></i>
+                        <h2 class="text-sm font-bold text-white uppercase tracking-wider">FOSTER II Logframe (ITT)</h2>
+                    </div>
+                    <span class="text-xs bg-indigo-500/10 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/20 font-medium">Auto-Calculated</span>
+                </div>
+
+                <div class="overflow-y-auto max-h-[420px] custom-scrollbar pr-1 space-y-2.5" id="ittContainer">
+                    <div class="text-center py-8 text-slate-500 text-xs">Loading indicators...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Value Chain Analytics & Anomaly Audit Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Value Chain Revenue Chart (7 Cols) -->
+            <div class="lg:col-span-7 glass-card rounded-xl p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-chart-column text-emerald-400"></i>
+                        <h2 class="text-sm font-bold text-white uppercase tracking-wider">Revenue Growth by Agricultural Subsector</h2>
+                    </div>
+                    <span class="text-xs text-slate-400">MSD Impact Assessment</span>
+                </div>
+                <div class="h-64">
+                    <canvas id="revenueChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Automated Quality Assurance & Anomaly Engine (5 Cols) -->
+            <div class="lg:col-span-5 glass-card rounded-xl p-4 flex flex-col">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-shield-halved text-amber-400"></i>
+                        <h2 class="text-sm font-bold text-white uppercase tracking-wider">QA Anomaly Detection Engine</h2>
+                    </div>
+                    <span class="text-xs bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20">Automated Audit</span>
+                </div>
+
+                <div class="overflow-y-auto max-h-64 custom-scrollbar space-y-2 pr-1" id="anomalyContainer">
+                    <div class="text-center py-8 text-slate-500 text-xs">Scanning warehouse for anomalies...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filterable Database Table with Search & Pagination -->
+        <div class="glass-card rounded-xl p-5">
+            <div class="flex flex-wrap justify-between items-center gap-4 mb-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-sm font-bold text-white uppercase tracking-wider">Operational Beneficiary Master Table</h2>
+                        <p class="text-xs text-slate-400">Showing granular records from <span class="text-cyan-400 font-semibold" id="tableTotal">5,200</span> warehouse participants</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="searchInput" oninput="debounceSearch()" placeholder="Search by name or ID..." class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:border-blue-500 w-56">
+                    </div>
+
+                    <select id="townshipFilter" onchange="fetchBeneficiaries(1)" class="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                        <option value="">All Townships</option>
+                        <option value="Taunggyi">Taunggyi</option>
+                        <option value="Kalaw">Kalaw</option>
+                        <option value="Hopong">Hopong</option>
+                        <option value="Pindaya">Pindaya</option>
+                        <option value="Nyaungshwe">Nyaungshwe</option>
+                        <option value="Ywangan">Ywangan</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-800/60 text-slate-400 uppercase font-semibold border-b border-slate-700/60">
+                        <tr>
+                            <th class="py-3 px-3">Beneficiary ID</th>
+                            <th class="py-3 px-3">Name / Enterprise</th>
+                            <th class="py-3 px-3">Category</th>
+                            <th class="py-3 px-3">Gender</th>
+                            <th class="py-3 px-3">Township</th>
+                            <th class="py-3 px-3">Value Chain</th>
+                            <th class="py-3 px-3 text-right">Current Revenue</th>
+                            <th class="py-3 px-3 text-right">Growth %</th>
+                            <th class="py-3 px-3 text-center">Climate Adopted</th>
+                            <th class="py-3 px-3 text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-800 text-slate-300">
+                        <tr><td colspan="10" class="py-6 text-center text-slate-500">Loading records...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="mt-4 flex justify-between items-center text-xs text-slate-400">
+                <span id="pageInfo">Page 1 of ...</span>
+                <div class="flex space-x-1.5" id="paginationBtns"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        let map;
+        let revenueChartInstance;
+        let searchTimeout;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            initGISMap();
+            loadKPIs();
+            loadIndicators();
+            loadCharts();
+            loadAnomalies();
+            fetchBeneficiaries(1);
+        });
+
+        // 1. Initialize Leaflet GIS Map with Southern Shan coordinates
+        function initGISMap() {
+            // Centered on Taunggyi / Southern Shan (20.78, 96.98)
+            map = L.map('gisMap').setView([20.78, 96.88], 9);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; CartoDB &copy; OpenStreetMap',
+                maxZoom: 16
+            }).addTo(map);
+
+            // Fetch spatial points
+            fetch('/api/spatial')
+                .then(r => r.json())
+                .then(points => {
+                    const colors = {
+                        "Specialty Coffee": "#d97706",
+                        "Organic Tea": "#059669",
+                        "Hass & Local Avocado": "#65a30d",
+                        "High-Value Vegetables": "#9333ea",
+                        "Hybrid Maize": "#eab308"
+                    };
+
+                    points.forEach(p => {
+                        const circle = L.circleMarker([p.lat, p.lng], {
+                            radius: p.category === "Agri-MSME" ? 6 : 4,
+                            fillColor: colors[p.value_chain] || "#3b82f6",
+                            color: "#ffffff",
+                            weight: 1,
+                            opacity: 0.9,
+                            fillOpacity: 0.8
+                        }).addTo(map);
+
+                        circle.bindPopup(`
+                            <div class="text-xs text-slate-800 font-sans leading-tight">
+                                <b class="text-sm font-bold text-slate-900">${p.name}</b><br/>
+                                <span class="text-blue-600 font-medium">${p.category}</span> • ${p.township}<br/>
+                                <b>Value Chain:</b> ${p.value_chain}<br/>
+                                <b>Monthly Revenue:</b> ${p.revenue.toLocaleString()} MMK<br/>
+                                <b>Climate Practice:</b> ${p.climate_adopted === 'Yes' ? '✅ Adopted' : '❌ None'}
+                            </div>
+                        `);
+                    });
+                })
+                .catch(err => console.error("Map load error", err));
+        }
+
+        // 2. Load Core KPIs
+        function loadKPIs() {
+            fetch('/api/kpis')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('headerCount').innerText = data.total_beneficiaries.toLocaleString();
+                    document.getElementById('kpiBeneficiaries').innerText = data.total_beneficiaries.toLocaleString();
+                    document.getElementById('kpiMSMEs').innerText = data.total_msmes.toLocaleString();
+                    document.getElementById('kpiFemale').innerText = data.female_inclusion_pct + "%";
+                    document.getElementById('kpiFinancing').innerText = (data.total_financing_millions / 1000).toFixed(1) + "B MMK";
+                });
+        }
+
+        // 3. Load Logframe Indicators
+        function loadIndicators() {
+            fetch('/api/indicators')
+                .then(r => r.json())
+                .then(data => {
+                    const c = document.getElementById('ittContainer');
+                    c.innerHTML = data.map(ind => {
+                        const statusColors = {
+                            "Exceeded": "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+                            "On-Track": "bg-blue-500/10 text-blue-400 border-blue-500/30",
+                            "Under-performing": "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                        };
+                        const barColor = ind.achieved_pct >= 100 ? "bg-emerald-500" : (ind.achieved_pct >= 80 ? "bg-blue-500" : "bg-amber-500");
+
+                        return `
+                            <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                                <div class="flex justify-between items-start gap-2">
+                                    <span class="text-xs font-bold text-slate-200">${ind.code}: ${ind.label}</span>
+                                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded border ${statusColors[ind.status]}">${ind.status}</span>
+                                </div>
+                                <div class="mt-2 flex justify-between items-center text-xs">
+                                    <span class="text-slate-400">Target: <b>${ind.target.toLocaleString()}</b></span>
+                                    <span class="text-slate-300">Achieved: <b class="text-white">${ind.actual.toLocaleString()}</b> (${ind.achieved_pct}%)</span>
+                                </div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                                    <div class="${barColor} h-full rounded-full transition-all duration-500" style="width: ${Math.min(ind.achieved_pct, 100)}%"></div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                });
+        }
+
+        // 4. Load Charts
+        function loadCharts() {
+            fetch('/api/charts')
+                .then(r => r.json())
+                .then(data => {
+                    const ctx = document.getElementById('revenueChart').getContext('2d');
+                    if (revenueChartInstance) revenueChartInstance.destroy();
+
+                    revenueChartInstance = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: data.value_chains.map(v => v.name),
+                            datasets: [{
+                                label: 'Average Revenue Growth Rate (%)',
+                                data: data.value_chains.map(v => v.growth),
+                                backgroundColor: ['#d97706', '#059669', '#65a30d', '#9333ea', '#eab308'],
+                                borderRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false }
+                            },
+                            scales: {
+                                y: {
+                                    grid: { color: 'rgba(255,255,255,0.06)' },
+                                    ticks: { color: '#94a3b8', callback: v => v + '%' }
+                                },
+                                x: {
+                                    grid: { display: false },
+                                    ticks: { color: '#cbd5e1', font: { size: 11 } }
+                                }
+                            }
+                        }
+                    });
+                });
+        }
+
+        // 5. Load Anomalies Log
+        function loadAnomalies() {
+            fetch('/api/audit-logs')
+                .then(r => r.json())
+                .then(items => {
+                    const c = document.getElementById('anomalyContainer');
+                    if (!items.length) {
+                        c.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">No active anomalies detected.</div>';
+                        return;
+                    }
+                    c.innerHTML = items.map(item => `
+                        <div class="bg-amber-950/20 border border-amber-900/30 p-2.5 rounded-lg text-xs flex justify-between items-start gap-2">
+                            <div>
+                                <span class="font-bold text-amber-300">${item.anomaly_type}</span>
+                                <p class="text-slate-400 text-[11px] mt-0.5">${item.details}</p>
+                                <span class="text-[10px] text-slate-500 font-mono">${item.beneficiary_id} • ${item.monitoring_id}</span>
+                            </div>
+                            <span class="text-[10px] bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded font-mono">Flagged</span>
+                        </div>
+                    `).join('');
+                });
+        }
+
+        // 6. Beneficiaries Table with Pagination
+        function fetchBeneficiaries(page = 1) {
+            const search = document.getElementById('searchInput').value;
+            const township = document.getElementById('townshipFilter').value;
+
+            fetch(`/api/beneficiaries?search=${encodeURIComponent(search)}&township=${encodeURIComponent(township)}&page=${page}&limit=12`)
+                .then(r => r.json())
+                .then(res => {
+                    document.getElementById('tableTotal').innerText = res.total.toLocaleString();
+                    document.getElementById('pageInfo').innerText = `Page ${res.page} of ${res.pages || 1} (${res.total.toLocaleString()} total)`;
+
+                    const tbody = document.getElementById('tableBody');
+                    if (!res.data.length) {
+                        tbody.innerHTML = '<tr><td colspan="10" class="py-6 text-center text-slate-500">No matching records found.</td></tr>';
+                        return;
+                    }
+
+                    tbody.innerHTML = res.data.map(r => `
+                        <tr class="hover:bg-slate-800/40 transition">
+                            <td class="py-2.5 px-3 font-mono font-medium text-blue-400">${r.beneficiary_id}</td>
+                            <td class="py-2.5 px-3 font-semibold text-slate-200">${r.participant_name}</td>
+                            <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] ${r.category === 'Agri-MSME' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20' : 'bg-slate-700/40 text-slate-300'}">${r.category}</span></td>
+                            <td class="py-2.5 px-3 text-slate-400">${r.gender}</td>
+                            <td class="py-2.5 px-3 text-slate-300">${r.township_name}</td>
+                            <td class="py-2.5 px-3 text-slate-300">${r.value_chain_name}</td>
+                            <td class="py-2.5 px-3 text-right font-mono text-slate-200">${r.current_monthly_revenue_mmk.toLocaleString()}</td>
+                            <td class="py-2.5 px-3 text-right font-mono font-bold text-emerald-400">+${(r.revenue_growth_pct * 100).toFixed(1)}%</td>
+                            <td class="py-2.5 px-3 text-center">${r.climate_resilient_adopted === 'Yes' ? '<span class="text-emerald-400 font-bold">✓</span>' : '<span class="text-slate-600">-</span>'}</td>
+                            <td class="py-2.5 px-3 text-center"><span class="text-[10px] px-2 py-0.5 rounded ${r.verification_status === 'Verified' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}">${r.verification_status}</span></td>
+                        </tr>
+                    `).join('');
+
+                    // Pagination buttons
+                    const btnContainer = document.getElementById('paginationBtns');
+                    btnContainer.innerHTML = '';
+                    if (res.page > 1) {
+                        btnContainer.innerHTML += `<button onclick="fetchBeneficiaries(${res.page - 1})" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-xs text-slate-300">Prev</button>`;
+                    }
+                    if (res.page < res.pages) {
+                        btnContainer.innerHTML += `<button onclick="fetchBeneficiaries(${res.page + 1})" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-xs text-slate-300">Next</button>`;
+                    }
+                });
+        }
+
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => fetchBeneficiaries(1), 300);
+        }
+
+        // 7. Live Kobo Webhook Simulation
+        function simulateLiveKobo() {
+            fetch('/api/simulate-kobo', { method: 'POST' })
+                .then(r => r.json())
+                .then(res => {
+                    alert(`✅ KoboToolbox Webhook Ingested!\nID: ${res.beneficiary_id}\nName: ${res.name}\nTownship: ${res.township}\nRevenue Growth: ${res.revenue_growth}`);
+                    loadKPIs();
+                    loadIndicators();
+                    loadCharts();
+                    fetchBeneficiaries(1);
+                })
+                .catch(err => alert("Error triggering webhook"));
+        }
+    </script>
+</body>
+</html>
