@@ -1,0 +1,11 @@
+Monitoring_ID,Beneficiary_ID,Anomaly_Type,Details,Timestamp
+MON-00142,BEN-SHAN-00142,Outlier: Revenue Jump > 1,000%,Baseline: 1486000.0, Reported: 22290000.0,2026-11-12 13:33:27
+MON-00210,BEN-SHAN-00210,Critical Anomaly: Post-Harvest Loss > 70%,Loss: 75.0%,2026-11-12 13:33:27
+MON-00580,BEN-SHAN-00580,Outlier: Revenue Jump > 1,000%,Baseline: 8020000.0, Reported: 120300000.0,2026-11-12 13:33:27
+MON-00890,BEN-SHAN-00890,Critical Anomaly: Post-Harvest Loss > 70%,Loss: 75.0%,2026-11-12 13:33:27
+MON-01204,BEN-SHAN-01204,Outlier: Revenue Jump > 1,000%,Baseline: 1648000.0, Reported: 24720000.0,2026-11-12 13:33:27
+MON-01750,BEN-SHAN-01750,Critical Anomaly: Post-Harvest Loss > 70%,Loss: 75.0%,2026-11-12 13:33:27
+MON-02390,BEN-SHAN-02390,Outlier: Revenue Jump > 1,000%,Baseline: 13070000.0, Reported: 196050000.0,2026-11-12 13:33:27
+MON-03105,BEN-SHAN-03105,Outlier: Revenue Jump > 1,000%,Baseline: 11380000.0, Reported: 170700000.0,2026-11-12 13:33:27
+MON-03400,BEN-SHAN-03400,Critical Anomaly: Post-Harvest Loss > 70%,Loss: 75.0%,2026-11-12 13:33:27
+MON-04210,BEN-SHAN-04210,Outlier: Revenue Jump > 1,000%,Baseline: 10320000.0, Reported: 154800000.0,2026-11-12 13:33:27
