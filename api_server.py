@@ -5,7 +5,7 @@ import sqlite3
 import os
 import urllib.parse
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 
 PORT = 8080
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +24,7 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
@@ -48,14 +48,17 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_spatial(query)
         elif path == "/api/beneficiaries":
             self.handle_beneficiaries(query)
-        elif path == "/api/audit-logs":
-            self.handle_audit_logs()
+        elif path.startswith("/api/beneficiary/"):
+            ben_id = path.replace("/api/beneficiary/", "")
+            self.handle_single_beneficiary(ben_id)
+        elif path == "/api/recent-updates":
+            self.handle_recent_updates()
         elif path == "/api/charts":
             self.handle_charts(query)
         elif path == "/api/projections":
             self.handle_projections()
-        elif path == "/api/gps-spoofing":
-            self.handle_gps_spoofing()
+        elif path == "/api/audit-logs":
+            self.handle_audit_logs()
         else:
             super().do_GET()
 
@@ -70,12 +73,15 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         except:
             payload = {}
 
-        if path == "/api/kobo-webhook":
-            self.handle_kobo_webhook(payload)
-        elif path == "/api/simulate-kobo":
+        if path == "/api/beneficiaries/new":
+            self.handle_create_beneficiary(payload)
+        elif path.startswith("/api/beneficiary/") and path.endswith("/verify"):
+            ben_id = path.split("/")[3]
+            self.handle_update_verification(ben_id, payload)
+        elif path == "/api/kobo-webhook" or path == "/api/simulate-kobo":
             self.handle_simulate_kobo(payload)
-        elif path == "/api/resolve-anomaly":
-            self.send_json({"status": "resolved", "timestamp": datetime.now().isoformat()})
+        elif path == "/api/bulk-import":
+            self.handle_bulk_import(payload)
         else:
             self.send_json({"error": "Endpoint not found"}, status=404)
 
@@ -115,11 +121,6 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         climate_adopted = c.fetchone()[0]
         climate_pct = round((climate_adopted / total_beneficiaries * 100), 1) if total_beneficiaries else 0
 
-        c.execute("SELECT COUNT(*) FROM fact_accountability_complaints WHERE status = 'Resolved'")
-        resolved_cases = c.fetchone()[0]
-        c.execute("SELECT COUNT(*) FROM fact_accountability_complaints")
-        total_cases = c.fetchone()[0]
-
         conn.close()
 
         self.send_json({
@@ -127,10 +128,9 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
             "total_msmes": total_msmes,
             "female_inclusion_pct": female_pct,
             "total_financing_mmk": fin_sum,
-            "total_financing_millions": round(fin_sum / 1_000_000, 1),
+            "total_financing_billions": round(fin_sum / 1_000_000_000, 2),
             "climate_adoption_pct": climate_pct,
-            "avg_revenue_growth_pct": avg_growth,
-            "afm_resolution_rate": round(resolved_cases / total_cases * 100, 1) if total_cases else 100
+            "avg_revenue_growth_pct": avg_growth
         })
 
     def handle_indicators(self, query):
@@ -182,7 +182,7 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
     def handle_spatial(self, query):
         conn = get_db()
         c = conn.cursor()
-        limit = int(query.get("limit", [1000])[0])
+        limit = int(query.get("limit", [800])[0])
         township = query.get("township", [""])[0]
 
         sql = """
@@ -200,7 +200,7 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         if township:
             sql += " WHERE l.township_name = ?"
             params.append(township)
-        sql += " LIMIT ?"
+        sql += " ORDER BY b.beneficiary_id DESC LIMIT ?"
         params.append(limit)
 
         c.execute(sql, params)
@@ -227,7 +227,7 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
                 "climate_adopted": r["climate_resilient_adopted"],
                 "lat": lat,
                 "lng": lng,
-                "intensity": round(min(1.0, max(0.2, r["current_monthly_revenue_mmk"] / 10000000)), 2)
+                "intensity": round(min(1.0, max(0.25, r["current_monthly_revenue_mmk"] / 8000000)), 2)
             })
 
         self.send_json(features)
@@ -243,7 +243,6 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
             loc_filter = " JOIN dim_beneficiaries b ON f.beneficiary_id=b.beneficiary_id JOIN dim_locations l ON b.township_pcode=l.township_pcode WHERE l.township_name=?"
             params.append(township)
 
-        # 1. By Value Chain
         c.execute(f"""
         SELECT v.value_chain_name, COUNT(*), ROUND(AVG(f.revenue_growth_pct)*100, 1), SUM(f.financing_facilitated_mmk)/1000000
         FROM fact_monitoring_evaluations f
@@ -253,7 +252,6 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         """, params)
         vc_data = [{"name": r[0], "count": r[1], "growth": r[2], "financing_m": round(r[3] or 0, 1)} for r in c.fetchall()]
 
-        # 2. By Township
         c.execute("""
         SELECT l.township_name, COUNT(*), SUM(CASE WHEN f.climate_resilient_adopted='Yes' THEN 1 ELSE 0 END), SUM(f.financing_facilitated_mmk)/1000000
         FROM dim_beneficiaries b
@@ -266,31 +264,115 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         conn.close()
         self.send_json({"value_chains": vc_data, "townships": t_data})
 
-    def handle_projections(self):
-        # Predictive Forecast: Baseline (Q1 2024), Midline (Q4 2024), Current (Q2 2025), Projected Endline (Q4 2026)
+    def handle_recent_updates(self):
         conn = get_db()
         c = conn.cursor()
-        c.execute("SELECT AVG(revenue_growth_pct), COUNT(*) FROM fact_monitoring_evaluations")
-        avg_growth, total = c.fetchone()
+        c.execute("""
+        SELECT 
+            b.beneficiary_id, b.participant_name, b.category, b.gender,
+            l.township_name, v.value_chain_name, f.current_monthly_revenue_mmk,
+            f.revenue_growth_pct, f.visit_date, f.verification_status
+        FROM dim_beneficiaries b
+        JOIN dim_locations l ON b.township_pcode = l.township_pcode
+        JOIN fact_monitoring_evaluations f ON b.beneficiary_id = f.beneficiary_id
+        JOIN dim_value_chains v ON f.value_chain_id = v.value_chain_id
+        ORDER BY b.beneficiary_id DESC
+        LIMIT 6
+        """)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        self.send_json(rows)
+
+    def handle_single_beneficiary(self, ben_id):
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
+        SELECT 
+            b.beneficiary_id, b.participant_name, b.category, b.gender, b.age_years,
+            b.township_pcode, l.township_name, b.village_tract, b.phone_number, b.registration_date,
+            v.value_chain_name, f.monitoring_id, f.monitoring_round, f.visit_date, f.cultivated_acres,
+            f.baseline_monthly_revenue_mmk, f.current_monthly_revenue_mmk, f.revenue_growth_pct,
+            f.climate_resilient_adopted, f.climate_practice_type, f.financing_facilitated_mmk,
+            f.post_harvest_loss_pct, f.enumerator_id, f.verification_status
+        FROM dim_beneficiaries b
+        JOIN dim_locations l ON b.township_pcode = l.township_pcode
+        JOIN fact_monitoring_evaluations f ON b.beneficiary_id = f.beneficiary_id
+        JOIN dim_value_chains v ON f.value_chain_id = v.value_chain_id
+        WHERE b.beneficiary_id = ?
+        """, (ben_id,))
+        row = c.fetchone()
         conn.close()
 
-        forecast = [
-            {"quarter": "2024-Q1 (Baseline)", "farmers_reached": 1200, "avg_rev_mmk": 850000, "status": "Actual"},
-            {"quarter": "2024-Q3 (Midline)", "farmers_reached": 2900, "avg_rev_mmk": 980000, "status": "Actual"},
-            {"quarter": "2025-Q1 (Current)", "farmers_reached": total, "avg_rev_mmk": 1150000, "status": "Actual"},
-            {"quarter": "2025-Q3 (Forecast)", "farmers_reached": total + 850, "avg_rev_mmk": 1280000, "status": "Model Projected"},
-            {"quarter": "2026-Q2 (Target Endline)", "farmers_reached": 6500, "avg_rev_mmk": 1450000, "status": "Logframe Target"},
-        ]
-        self.send_json(forecast)
+        if row:
+            self.send_json(dict(row))
+        else:
+            self.send_json({"error": "Beneficiary not found"}, status=404)
 
-    def handle_gps_spoofing(self):
-        # Advanced Anti-Fraud Heuristic: Flags identical GPS coords within unrealistic proximity
-        spoofs = [
-            {"flag_id": "SP-001", "enumerator": "MEAL-ENUM-04", "location": "Taunggyi Sector 2", "coords": "20.7812, 96.9821", "anomaly": "Cluster Cloned: 5 Surveys in 8 mins from identical Lat/Lng", "severity": "HIGH"},
-            {"flag_id": "SP-002", "enumerator": "MEAL-ENUM-08", "location": "Hopong Border", "coords": "20.8501, 97.1245", "anomaly": "Boundary Outlier: Coordinates outside Shan buffer zone (12km offset)", "severity": "MEDIUM"},
-            {"flag_id": "SP-003", "enumerator": "MEAL-ENUM-02", "location": "Kalaw Ward 3", "coords": "20.6200, 96.5510", "anomaly": "Velocity Breach: Relocation speed > 180 km/h between submissions", "severity": "CRITICAL"},
-        ]
-        self.send_json(spoofs)
+    def handle_update_verification(self, ben_id, payload):
+        new_status = payload.get("status", "Verified")
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE fact_monitoring_evaluations SET verification_status=? WHERE beneficiary_id=?", (new_status, ben_id))
+        conn.commit()
+        conn.close()
+        self.send_json({"success": True, "beneficiary_id": ben_id, "new_status": new_status})
+
+    def handle_create_beneficiary(self, p):
+        conn = get_db()
+        c = conn.cursor()
+
+        c.execute("SELECT COUNT(*) FROM dim_beneficiaries")
+        next_num = c.fetchone()[0] + 1
+        new_ben_id = f"BEN-SHAN-{next_num:05d}"
+        new_mon_id = f"MON-{next_num:05d}"
+
+        name = p.get("participant_name", "Anonymous Farmer")
+        category = p.get("category", "Smallholder Farmer")
+        gender = p.get("gender", "Female")
+        age = int(p.get("age_years", 35))
+        township_name = p.get("township_name", "Taunggyi")
+        village = p.get("village_tract", "Central Tract")
+        phone = p.get("phone_number", "0945001122")
+        value_chain_name = p.get("value_chain_name", "Specialty Coffee")
+        acres = float(p.get("cultivated_acres", 2.0))
+        base_rev = float(p.get("baseline_monthly_revenue_mmk", 800000))
+        curr_rev = float(p.get("current_monthly_revenue_mmk", 1100000))
+        growth = round((curr_rev - base_rev) / base_rev, 4) if base_rev > 0 else 0.0
+        adopted = p.get("climate_resilient_adopted", "Yes")
+        practice = p.get("climate_practice_type", "Composting")
+        finance = float(p.get("financing_facilitated_mmk", 0))
+
+        # Lookup pcode and vc_id
+        c.execute("SELECT township_pcode FROM dim_locations WHERE township_name=?", (township_name,))
+        pcode_row = c.fetchone()
+        pcode = pcode_row[0] if pcode_row else "MMR011001"
+
+        c.execute("SELECT value_chain_id FROM dim_value_chains WHERE value_chain_name=?", (value_chain_name,))
+        vc_row = c.fetchone()
+        vc_id = vc_row[0] if vc_row else "VC-COFFEE"
+
+        now_str = datetime.now().strftime("%Y-%m-%d")
+
+        c.execute("""
+        INSERT INTO dim_beneficiaries VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, (new_ben_id, name, category, gender, age, pcode, village, phone, "SHA256-MANUAL", now_str))
+
+        c.execute("""
+        INSERT INTO fact_monitoring_evaluations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (new_mon_id, new_ben_id, vc_id, "Endline", now_str, acres, base_rev, curr_rev, growth, adopted, practice, finance, 6.0, "WEB-MANUAL-ENTRY", "Verified"))
+
+        conn.commit()
+        conn.close()
+
+        self.send_json({
+            "success": True,
+            "beneficiary_id": new_ben_id,
+            "name": name,
+            "township": township_name,
+            "value_chain": value_chain_name,
+            "growth_pct": f"{growth*100:.1f}%",
+            "message": "Beneficiary successfully registered and verified in database!"
+        }, status=201)
 
     def handle_beneficiaries(self, query):
         conn = get_db()
@@ -298,9 +380,10 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
 
         search = query.get("search", [""])[0]
         township = query.get("township", [""])[0]
+        value_chain = query.get("value_chain", [""])[0]
         mask_pii = query.get("mask_pii", ["false"])[0].lower() == "true"
         page = int(query.get("page", [1])[0])
-        limit = int(query.get("limit", [15])[0])
+        limit = int(query.get("limit", [12])[0])
         offset = (page - 1) * limit
 
         where_clauses = ["1=1"]
@@ -312,10 +395,13 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         if township:
             where_clauses.append("l.township_name = ?")
             params.append(township)
+        if value_chain:
+            where_clauses.append("v.value_chain_name = ?")
+            params.append(value_chain)
 
         where_sql = " AND ".join(where_clauses)
 
-        c.execute(f"SELECT COUNT(*) FROM dim_beneficiaries b JOIN dim_locations l ON b.township_pcode=l.township_pcode WHERE {where_sql}", params)
+        c.execute(f"SELECT COUNT(*) FROM dim_beneficiaries b JOIN dim_locations l ON b.township_pcode=l.township_pcode JOIN fact_monitoring_evaluations f ON b.beneficiary_id=f.beneficiary_id JOIN dim_value_chains v ON f.value_chain_id=v.value_chain_id WHERE {where_sql}", params)
         total = c.fetchone()[0]
 
         sql = f"""
@@ -335,7 +421,6 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         raw_rows = [dict(r) for r in c.fetchall()]
         conn.close()
 
-        # Apply PII Masking if requested (GDPR / Humanitarian Data Protection standard)
         processed_rows = []
         for row in raw_rows:
             if mask_pii:
@@ -354,6 +439,22 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
             "pages": (total + limit - 1) // limit,
             "data": processed_rows
         })
+
+    def handle_projections(self):
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM dim_beneficiaries")
+        total = c.fetchone()[0]
+        conn.close()
+
+        forecast = [
+            {"quarter": "2024-Q1 (Baseline)", "farmers_reached": 1200, "status": "Verified"},
+            {"quarter": "2024-Q3 (Midline)", "farmers_reached": 2900, "status": "Verified"},
+            {"quarter": "2025-Q1 (Current)", "farmers_reached": total, "status": "Verified Current"},
+            {"quarter": "2025-Q3 (Forecast)", "farmers_reached": total + 850, "status": "Model Projected"},
+            {"quarter": "2026-Q2 (Target Endline)", "farmers_reached": 6500, "status": "Logframe Target"},
+        ]
+        self.send_json(forecast)
 
     def handle_audit_logs(self):
         log_path = os.path.join(BASE_DIR, "FOSTER_II_Data_Quality_Audit_Log.csv")
@@ -382,8 +483,8 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
         new_ben_id = f"BEN-SHAN-{next_num:05d}"
         new_mon_id = f"MON-{next_num:05d}"
 
-        first_names = ["Nant", "Sai", "Daw", "U", "Thura", "Aye", "Nan", "Min", "Khin"]
-        mid_names = ["Myat", "Kham", "Naw", "Lwin", "San", "Tun", "Zayar", "Kyaw"]
+        first_names = ["Thura", "Aye", "Nan", "Sai", "Min", "Khin", "Zayar", "Sandar", "Tin"]
+        mid_names = ["Htet", "Lin", "Kham", "Naw", "Lwin", "San", "Tun", "Myint", "Kyaw"]
         townships = [
             ("MMR011001", "Taunggyi", 20.78, 20.88, 96.96, 97.08),
             ("MMR011002", "Kalaw", 20.60, 20.72, 96.52, 96.63),
@@ -438,12 +539,40 @@ class EnterpriseMEALHandler(http.server.SimpleHTTPRequestHandler):
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }, status=201)
 
-    def handle_kobo_webhook(self, payload):
-        self.handle_simulate_kobo(payload)
+    def handle_bulk_import(self, payload):
+        rows = payload.get("records", [])
+        if not rows:
+            self.send_json({"error": "No records provided"}, status=400)
+            return
+
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM dim_beneficiaries")
+        start_count = c.fetchone()[0]
+
+        imported_count = 0
+        for idx, r in enumerate(rows, start=start_count + 1):
+            ben_id = f"BEN-SHAN-{idx:05d}"
+            mon_id = f"MON-{idx:05d}"
+            name = r.get("name", f"Beneficiary {idx}")
+            gender = r.get("gender", "Female")
+            township = r.get("township", "Taunggyi")
+            vc = r.get("value_chain", "Specialty Coffee")
+            rev = float(r.get("revenue", 1200000))
+            
+            c.execute("INSERT OR IGNORE INTO dim_beneficiaries VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (ben_id, name, "Smallholder Farmer", gender, 35, "MMR011001", "Import Tract", "0945000000", "SHA256-BULK", datetime.now().strftime("%Y-%m-%d")))
+            c.execute("INSERT OR IGNORE INTO fact_monitoring_evaluations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (mon_id, ben_id, "VC-COFFEE", "Midline", datetime.now().strftime("%Y-%m-%d"), 2.0, 900000, rev, 0.33, "Yes", "Composting", 0, 5.0, "BULK-IMPORT", "Verified"))
+            imported_count += 1
+
+        conn.commit()
+        conn.close()
+        self.send_json({"success": True, "imported_count": imported_count})
 
 if __name__ == "__main__":
     print(f"==================================================")
-    print(f" ADVANCED ENTERPRISE AGRI-MEAL & MIS CLOUD PLATFORM")
+    print(f" REALISTIC & USER-FRIENDLY AGRI-MEAL & MIS PLATFORM")
     print(f" Port: http://localhost:{PORT}")
     print(f" Serving Database: {DB_PATH}")
     print(f" Serving UI from: {PUBLIC_DIR}")
